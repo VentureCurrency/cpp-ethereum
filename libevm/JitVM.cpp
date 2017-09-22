@@ -17,8 +17,10 @@ class EVM
 {
 public:
 	EVM():
-		m_instance(evmjit_get_factory().create())
-	{}
+		m_instance(evmjit_create())
+	{
+		assert(m_instance->abi_version == EVM_ABI_VERSION);
+	}
 
 	~EVM()
 	{

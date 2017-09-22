@@ -254,7 +254,7 @@ void call(evm_result* o_result, evm_context* _context, evm_message const* _msg) 
 	};
 }
 
-evm_host const fnTable = {
+evm_context_fn_table const fnTable = {
 	accountExists,
 	getStorage,
 	setStorage,

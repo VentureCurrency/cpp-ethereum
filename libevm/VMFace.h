@@ -16,9 +16,9 @@
 */
 #pragma once
 
-#include <memory>
-#include <libdevcore/Exceptions.h>
 #include "ExtVMFace.h"
+#include <libdevcore/Exceptions.h>
+#include <memory>
 
 namespace dev
 {
@@ -34,6 +34,13 @@ ETH_SIMPLE_EXCEPTION_VM(OutOfStack);
 ETH_SIMPLE_EXCEPTION_VM(StackUnderflow);
 ETH_SIMPLE_EXCEPTION_VM(DisallowedStateChange);
 ETH_SIMPLE_EXCEPTION_VM(BufferOverrun);
+
+/// Reports VM internal error. This is not based on VMException because it must be handled
+/// differently than defined consensus exceptions.
+struct InternalVMError : Exception {};
+
+/// Error info for EVMC status code.
+using errinfo_evmcStatusCode = boost::error_info<struct tag_evmcStatusCode, evmc_status_code>;
 
 struct RevertInstruction: VMException
 {
@@ -64,6 +71,20 @@ public:
 	/// VM implementation
 	virtual owning_bytes_ref exec(u256& io_gas, ExtVMFace& _ext, OnOpFunc const& _onOp) = 0;
 };
+
+/// Helpers:
+
+// Convert from a 256-bit integer stack/memory entry into a 160-bit Address hash.
+// Currently we just pull out the right (low-order in BE) 160-bits.
+inline Address asAddress(u256 _item)
+{
+	return right160(h256(_item));
+}
+
+inline u256 fromAddress(Address _a)
+{
+	return (u160)_a;
+}
 
 }
 }

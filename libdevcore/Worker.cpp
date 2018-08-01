@@ -48,9 +48,12 @@ void Worker::startWorking()
 			while (m_state != WorkerState::Killing)
 			{
 				WorkerState ex = WorkerState::Starting;
-				bool ok = m_state.compare_exchange_strong(ex, WorkerState::Started);
+				{
+					// the condition variable-related lock
+					unique_lock<mutex> l(x_work);
+					m_state = WorkerState::Started;
+				}
 //				cnote << "Trying to set Started: Thread was" << (unsigned)ex << "; " << ok;
-				(void)ok;
 				m_state_notifier.notify_all();
 
 				try
@@ -61,21 +64,25 @@ void Worker::startWorking()
 				}
 				catch (std::exception const& _e)
 				{
-					clog(WarnChannel) << "Exception thrown in Worker thread: " << _e.what();
+					cwarn << "Exception thrown in Worker thread: " << _e.what();
 				}
 
 //				ex = WorkerState::Stopping;
 //				m_state.compare_exchange_strong(ex, WorkerState::Stopped);
 
-				ex = m_state.exchange(WorkerState::Stopped);
-//				cnote << "State: Stopped: Thread was" << (unsigned)ex;
-				if (ex == WorkerState::Killing || ex == WorkerState::Starting)
-					m_state.exchange(ex);
+				{
+					// the condition variable-related lock
+					unique_lock<mutex> l(x_work);
+					ex = m_state.exchange(WorkerState::Stopped);
+//					cnote << "State: Stopped: Thread was" << (unsigned)ex;
+					if (ex == WorkerState::Killing || ex == WorkerState::Starting)
+						m_state.exchange(ex);
+				}
 				m_state_notifier.notify_all();
 //				cnote << "Waiting until not Stopped...";
 
 				{
-					std::unique_lock<std::mutex> l(x_work);
+					unique_lock<mutex> l(x_work);
 					DEV_TIMED_ABOVE("Worker stopping", 100)
 						while (m_state == WorkerState::Stopped)
 							m_state_notifier.wait(l);
@@ -96,7 +103,8 @@ void Worker::stopWorking()
 	if (m_work)
 	{
 		WorkerState ex = WorkerState::Started;
-		m_state.compare_exchange_strong(ex, WorkerState::Stopping);
+		if (!m_state.compare_exchange_strong(ex, WorkerState::Stopping))
+			return;
 		m_state_notifier.notify_all();
 
 		DEV_TIMED_ABOVE("Stop worker", 100)
@@ -111,7 +119,8 @@ void Worker::terminate()
 	std::unique_lock<Mutex> l(x_work);
 	if (m_work)
 	{
-		m_state.exchange(WorkerState::Killing);
+		if (m_state.exchange(WorkerState::Killing) == WorkerState::Killing)
+			return; // Somebody else is doing this
 		l.unlock();
 		m_state_notifier.notify_all();
 		DEV_TIMED_ABOVE("Terminate worker", 100)

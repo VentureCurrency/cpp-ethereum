@@ -23,11 +23,7 @@ R"E(
 	"params": {
 		"accountStartNonce": "0x00",
 		"homesteadForkBlock": "0x00",
-		"daoHardforkBlock": "0xfffffffffffffff",
 		"EIP150ForkBlock": "0x05",
-		"EIP158ForkBlock": "0xfffffffffffffff",
-		"byzantiumForkBlock": "0xfffffffffffffff",
-		"constantinopleForkBlock": "0xfffffffffffffff",
 		"networkID" : "0x1",
 		"chainID": "0x01",
 		"maximumExtraDataSize": "0x20",
@@ -43,7 +39,7 @@ R"E(
 	},
 	"genesis": {
 		"nonce": "0x0000000000000042",
-		"difficulty": "0x400000000",
+		"difficulty": "0x020000",
 		"mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 		"author": "0x0000000000000000000000000000000000000000",
 		"timestamp": "0x00",

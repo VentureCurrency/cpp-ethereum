@@ -1,29 +1,34 @@
 
-set(SOURCES
-	ExtVMFace.cpp
-	Instruction.cpp
-	VM.cpp
-	VMOpt.cpp
-	VMCalls.cpp
-	VMSIMD.cpp
-	VMValidate.cpp
-	VMFactory.cpp
+set(sources
+    EVMC.cpp EVMC.h
+    ExtVMFace.cpp ExtVMFace.h
+    Instruction.cpp Instruction.h
+    LegacyVM.cpp LegacyVM.h
+    LegacyVMConfig.h
+    LegacyVMCalls.cpp
+    LegacyVMOpt.cpp
+    VMFace.h
+    VMFactory.cpp VMFactory.h
 )
 
-if (EVMJIT)
-	list(APPEND SOURCES
-		JitVM.cpp
-		SmartVM.cpp
-	)
+add_library(evm ${sources})
+
+target_link_libraries(
+    evm
+    PUBLIC ethcore devcore evmc::evmc
+    PRIVATE aleth-interpreter aleth-buildinfo jsoncpp_lib_static Boost::program_options ${CMAKE_DL_LIBS}
+)
+
+if(EVM_OPTIMIZE)
+    target_compile_definitions(evm PRIVATE EVM_OPTIMIZE)
 endif()
 
-file(GLOB HEADERS "*.h")
+if(EVMJIT)
+    target_link_libraries(evm PRIVATE evmjit)
+    target_compile_definitions(evm PRIVATE ETH_EVMJIT)
+endif()
 
-add_library(evm ${SOURCES} ${HEADERS})
-
-target_link_libraries(evm PUBLIC ethcore devcore PRIVATE jsoncpp_lib_static)
-target_include_directories(evm PUBLIC ../evmjit/include)
-
-if (EVMJIT)
-	target_link_libraries(evm PRIVATE evmjit)
+if(HERA)
+    target_link_libraries(evm PRIVATE hera)
+    target_compile_definitions(evm PRIVATE ETH_HERA)
 endif()

@@ -236,7 +236,7 @@ void runRlpTest(string _name, fs::path const& _path)
 
 using namespace dev::test;
 
-BOOST_FIXTURE_TEST_SUITE(RlpTests, TestOutputHelper)
+BOOST_FIXTURE_TEST_SUITE(RlpTests, TestOutputHelperFixture)
 
 BOOST_AUTO_TEST_CASE(EmptyArrayList)
 {
@@ -275,7 +275,7 @@ BOOST_AUTO_TEST_CASE(rlpRandom)
 	fs::path testPath = dev::test::getTestPath();
 	testPath /= fs::path("RLPTests/RandomRLPTests");
 
-	vector<boost::filesystem::path> testFiles = getJsonFiles(testPath);
+	vector<boost::filesystem::path> testFiles = test::getFiles(testPath, {".json"});
 	for (auto& path: testFiles)
 	{
 		try

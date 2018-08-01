@@ -26,8 +26,8 @@ R"E(
 		"daoHardforkBlock": "0x1d4c00",
 		"EIP150ForkBlock": "0x259518",
 		"EIP158ForkBlock": "0x28d138",
-		"byzantiumForkBlock": "0x2dc6c0",
-		"constantinopleForkBlock": "0x2f36ca",
+		"byzantiumForkBlock": "0x42ae50",
+		"constantinopleForkBlock": "0x500000",
 		"networkID" : "0x01",
 		"chainID": "0x01",
 		"maximumExtraDataSize": "0x20",
@@ -42,7 +42,7 @@ R"E(
 	},
 	"genesis": {
 		"nonce": "0x0000000000000042",
-		"difficulty": "0x400000000",
+		"difficulty": "0x020000",
 		"mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 		"author": "0x0000000000000000000000000000000000000000",
 		"timestamp": "0x00",
@@ -57,7 +57,7 @@ R"E(
 		"0000000000000000000000000000000000000004": { "precompiled": { "name": "identity", "linear": { "base": 15, "word": 3 } } },
 		"0000000000000000000000000000000000000005": { "precompiled": { "name": "modexp", "startingBlock" : "0x2dc6c0" } },
 		"0000000000000000000000000000000000000006": { "precompiled": { "name": "alt_bn128_G1_add", "startingBlock" : "0x2dc6c0", "linear": { "base": 500, "word": 0 } } },
-		"0000000000000000000000000000000000000007": { "precompiled": { "name": "alt_bn128_G1_mul", "startingBlock" : "0x2dc6c0", "linear": { "base": 2000, "word": 0 } } },
+		"0000000000000000000000000000000000000007": { "precompiled": { "name": "alt_bn128_G1_mul", "startingBlock" : "0x2dc6c0", "linear": { "base": 40000, "word": 0 } } },
 		"0000000000000000000000000000000000000008": { "precompiled": { "name": "alt_bn128_pairing_product", "startingBlock" : "0x2dc6c0" } }
 	}
 }

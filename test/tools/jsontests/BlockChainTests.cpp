@@ -49,70 +49,72 @@ json_spirit::mValue BlockchainTestSuite::doTests(json_spirit::mValue const& _inp
 		json_spirit::mObject const& inputTest = i.second.get_obj();
 
 		//Select test by name if --singletest is set and not filling state tests as blockchain
-		if (!Options::get().fillchain && !TestOutputHelper::checkTest(testname))
+		if (!Options::get().fillchain && !TestOutputHelper::get().checkTest(testname))
 			continue;
 
 		BOOST_REQUIRE_MESSAGE(inputTest.count("genesisBlockHeader"),
-			"\"genesisBlockHeader\" field is not found. filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"\"genesisBlockHeader\" field is not found. filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 		);
 		BOOST_REQUIRE_MESSAGE(inputTest.count("pre"),
-			"\"pre\" field is not found. filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"\"pre\" field is not found. filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 		);
 
 		if (inputTest.count("expect"))
-		{
-			BOOST_REQUIRE_MESSAGE(_fillin, "a filled test should not contain any expect fields.");
-			spellCheckNetworkNamesInExpectField(inputTest.at("expect").get_array());
-		}
+            BOOST_REQUIRE_MESSAGE(_fillin, "a filled test should not contain any expect fields.");
 
-		if (_fillin)
+        if (_fillin)
 		{
-			//create a blockchain test for each network
-			for (auto& network : test::getNetworks())
-			{
-				if (!Options::get().singleTestNet.empty() && Options::get().singleTestNet != test::netIdToString(network))
+            BOOST_REQUIRE(inputTest.count("expect") > 0);
+            set<eth::Network> allnetworks = ImportTest::getAllNetworksFromExpectSections(
+                inputTest.at("expect").get_array(), ImportTest::testType::BlockchainTest);
+
+            //create a blockchain test for each network
+            for (auto& network : allnetworks)
+            {
+                if (test::isDisabledNetwork(network))
+                    continue;
+                if (!Options::get().singleTestNet.empty() && Options::get().singleTestNet != test::netIdToString(network))
 					continue;
 
 				dev::test::TestBlockChain::s_sealEngineNetwork = network;
 				string newtestname = testname + "_" + test::netIdToString(network);
 
 				json_spirit::mObject jObjOutput = inputTest;
-				if (inputTest.count("expect"))
-				{
-					//prepare the corresponding expect section for the test
-					json_spirit::mArray const& expects = inputTest.at("expect").get_array();
-					bool found = false;
+                // prepare the corresponding expect section for the test
+                json_spirit::mArray const& expects = inputTest.at("expect").get_array();
+                bool found = false;
 
-					for (auto& expect : expects)
-					{
-						vector<string> netlist;
-						json_spirit::mObject const& expectObj = expect.get_obj();
-						ImportTest::parseJsonStrValueIntoVector(expectObj.at("network"), netlist);
+                for (auto& expect : expects)
+                {
+                    set<string> netlist;
+                    json_spirit::mObject const& expectObj = expect.get_obj();
+                    ImportTest::parseJsonStrValueIntoSet(expectObj.at("network"), netlist);
 
-						if (std::find(netlist.begin(), netlist.end(), test::netIdToString(network)) != netlist.end() ||
-							std::find(netlist.begin(), netlist.end(), "ALL") != netlist.end())
-						{
-							jObjOutput["expect"] = expectObj.at("result");
-							found = true;
-							break;
-						}
-					}
-					if (!found)
-						jObjOutput.erase(jObjOutput.find("expect"));
+                    if (netlist.count(test::netIdToString(network)) || netlist.count("ALL"))
+                    {
+                        jObjOutput["expect"] = expectObj.at("result");
+                        found = true;
+                        break;
+                    }
 				}
-				TestOutputHelper::setCurrentTestName(newtestname);
+                if (!found)
+                    jObjOutput.erase(jObjOutput.find("expect"));
+
+                TestOutputHelper::get().setCurrentTestName(newtestname);
 				jObjOutput = fillBCTest(jObjOutput);
 				jObjOutput["network"] = test::netIdToString(network);
+				if (inputTest.count("_info"))
+					jObjOutput["_info"] = inputTest.at("_info");
 				tests[newtestname] = jObjOutput;
 			}
 		}
 		else
 		{
 			BOOST_REQUIRE_MESSAGE(inputTest.count("network"),
-				"\"network\" field is not found. filename: " + TestOutputHelper::testFileName() +
-				" testname: " + TestOutputHelper::testName()
+				"\"network\" field is not found. filename: " + TestOutputHelper::get().testFile().string() +
+				" testname: " + TestOutputHelper::get().testName()
 			);
 			dev::test::TestBlockChain::s_sealEngineNetwork = stringToNetId(inputTest.at("network").get_str());
 			if (test::isDisabledNetwork(dev::test::TestBlockChain::s_sealEngineNetwork))
@@ -137,7 +139,7 @@ fs::path BCGeneralStateTestsSuite::suiteFolder() const
 }
 fs::path BCGeneralStateTestsSuite::suiteFillerFolder() const
 {
-	return "GenStateTestAsBcTemp";
+	return fs::path("BlockchainTestsFiller") / "GeneralStateTests";
 }
 json_spirit::mValue TransitionTestsSuite::doTests(json_spirit::mValue const& _input, bool _fillin) const
 {
@@ -147,15 +149,15 @@ json_spirit::mValue TransitionTestsSuite::doTests(json_spirit::mValue const& _in
 		string testname = i.first;
 		json_spirit::mObject& o = i.second.get_obj();
 
-		BOOST_REQUIRE(o.count("genesisBlockHeader"));
-		BOOST_REQUIRE(o.count("pre"));
-		BOOST_REQUIRE(o.count("network"));
+		BOOST_REQUIRE_MESSAGE(o.count("genesisBlockHeader"), "genesisBlockHeader not found " + testname);
+		BOOST_REQUIRE_MESSAGE(o.count("pre"), "pre not found " + testname);
+		BOOST_REQUIRE_MESSAGE(o.count("network"), "network not found " + testname);
 
 		dev::test::TestBlockChain::s_sealEngineNetwork = stringToNetId(o["network"].get_str());
 		if (test::isDisabledNetwork(dev::test::TestBlockChain::s_sealEngineNetwork))
 			continue;
 
-		if (!TestOutputHelper::checkTest(testname))
+		if (!TestOutputHelper::get().checkTest(testname))
 		{
 			o.clear(); //don't add irrelevant tests to the final file when filling
 			continue;
@@ -214,30 +216,15 @@ void ChainBranch::resetBlockchain()
 	dev::test::TestBlockChain::s_sealEngineNetwork = s_tempBlockchainNetwork;
 }
 
-
-void spellCheckNetworkNamesInExpectField(json_spirit::mArray const& _expects)
-{
-	for (auto& expect: _expects)
-	{
-		vector<string> netlist;
-		json_spirit::mObject const& expectObj = expect.get_obj();
-			ImportTest::parseJsonStrValueIntoVector(expectObj.at("network"), netlist);
-			for (string const& networkName: netlist)
-				if (networkName != "ALL") // "ALL" is allowed as a wildcard.
-					(void)stringToNetId(networkName);
-	}
-}
-
-
 json_spirit::mObject fillBCTest(json_spirit::mObject const& _input)
 {
 	json_spirit::mObject output;
-	string const& testName = TestOutputHelper::testName();
+	string const& testName = TestOutputHelper::get().testName();
 	TestBlock genesisBlock(_input.at("genesisBlockHeader").get_obj(), _input.at("pre").get_obj());
 	genesisBlock.setBlockHeader(genesisBlock.blockHeader());
 
 	TestBlockChain testChain(genesisBlock);
-	assert(testChain.interface().isKnown(genesisBlock.blockHeader().hash(WithSeal)));
+	assert(testChain.getInterface().isKnown(genesisBlock.blockHeader().hash(WithSeal)));
 
 	output["genesisBlockHeader"] = writeBlockHeaderToJson(genesisBlock.blockHeader());
 	output["genesisRLP"] = toHexPrefixed(genesisBlock.bytes());
@@ -334,8 +321,9 @@ json_spirit::mObject fillBCTest(json_spirit::mObject const& _input)
 		if (blObjInput.count("blockHeaderPremine"))
 			overwriteBlockHeaderForTest(blObjInput.at("blockHeaderPremine").get_obj(), block, *chainMap[chainname]);
 
-		cnote << "Mining block" <<  importBlockNumber << "for chain" << chainname << "at test " << testName;
-		block.mine(blockchain);
+        cnote << "Mining block '" << importBlockNumber << "' for chain '" << chainname
+              << "' at test '" << testName << "'";
+        block.mine(blockchain);
 		cnote << "Block mined with...";
 		cnote << "Transactions: " << block.transactionQueue().topTransactions(100).size();
 		cnote << "Uncles: " << block.uncles().size();
@@ -425,12 +413,12 @@ json_spirit::mObject fillBCTest(json_spirit::mObject const& _input)
 
 void testBCTest(json_spirit::mObject const& _o)
 {
-	string testName = TestOutputHelper::testName();
+	string testName = TestOutputHelper::get().testName();
 	TestBlock genesisBlock(_o.at("genesisBlockHeader").get_obj(), _o.at("pre").get_obj());
 	TestBlockChain blockchain(genesisBlock);
 
 	TestBlockChain testChain(genesisBlock);
-	assert(testChain.interface().isKnown(genesisBlock.blockHeader().hash(WithSeal)));
+	assert(testChain.getInterface().isKnown(genesisBlock.blockHeader().hash(WithSeal)));
 
 	if (_o.count("genesisRLP") > 0)
 	{
@@ -475,8 +463,8 @@ void testBCTest(json_spirit::mObject const& _o)
 		//block from RLP successfully imported. now compare this rlp to test sections
 		BOOST_REQUIRE_MESSAGE(blObj.count("blockHeader"),
 			"blockHeader field is not found. "
-			"filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 		);
 
 		//Check Provided Header against block in RLP
@@ -485,8 +473,8 @@ void testBCTest(json_spirit::mObject const& _o)
 		//ImportTransactions
 		BOOST_REQUIRE_MESSAGE(blObj.count("transactions"),
 			"transactions field is not found. "
-			"filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 		);
 		for (auto const& txObj: blObj["transactions"].get_array())
 		{
@@ -498,7 +486,7 @@ void testBCTest(json_spirit::mObject const& _o)
 		vector<u256> uncleNumbers;
 		if (blObj["uncleHeaders"].type() != json_spirit::null_type)
 		{
-			BOOST_REQUIRE_MESSAGE(blObj["uncleHeaders"].get_array().size() <= 2, "Too many uncle headers in block! " + TestOutputHelper::testName());
+			BOOST_REQUIRE_MESSAGE(blObj["uncleHeaders"].get_array().size() <= 2, "Too many uncle headers in block! " + TestOutputHelper::get().testName());
 			for (auto const& uBlHeaderObj: blObj["uncleHeaders"].get_array())
 			{
 				mObject uBlH = uBlHeaderObj.get_obj();
@@ -523,11 +511,11 @@ void testBCTest(json_spirit::mObject const& _o)
 		}
 
 		//Check that imported block to the chain is equal to declared block from test
-		bytes importedblock = testChain.interface().block(blockFromFields.blockHeader().hash(WithSeal));
+		bytes importedblock = testChain.getInterface().block(blockFromFields.blockHeader().hash(WithSeal));
 		TestBlock inchainBlock(toHex(importedblock));
 		checkBlocks(inchainBlock, blockFromFields, testName);
 
-		string blockNumber = toString(testChain.interface().number());
+		string blockNumber = toString(testChain.getInterface().number());
 		string blockChainName = "default";
 		if (blObj.count("chainname") > 0)
 			blockChainName = blObj["chainname"].get_str();
@@ -538,14 +526,14 @@ void testBCTest(json_spirit::mObject const& _o)
 		if (blockFromFields.blockHeader().parentHash() == preHash)
 		{
 			State const postState = testChain.topBlock().state();
-			assert(testChain.interface().sealEngine());
-			bigint reward = calculateMiningReward(testChain.topBlock().blockHeader().number(), uncleNumbers.size() >= 1 ? uncleNumbers[0] : 0, uncleNumbers.size() >= 2 ? uncleNumbers[1] : 0, *testChain.interface().sealEngine());
+			assert(testChain.getInterface().sealEngine());
+			bigint reward = calculateMiningReward(testChain.topBlock().blockHeader().number(), uncleNumbers.size() >= 1 ? uncleNumbers[0] : 0, uncleNumbers.size() >= 2 ? uncleNumbers[1] : 0, *testChain.getInterface().sealEngine());
 			ImportTest::checkBalance(preState, postState, reward);
 		}
 		else
 		{
 			cnote << "Block Number " << testChain.topBlock().blockHeader().number();
-			cnote << "Skipping the balance validation of potential correct block: " << TestOutputHelper::testName();
+			cnote << "Skipping the balance validation of potential correct block: " << TestOutputHelper::get().testName();
 		}
 
 		cnote << "Tested topblock number" << blockNumber << "for chain " << blockChainName << testName;
@@ -597,7 +585,7 @@ void overwriteBlockHeaderForTest(mObject const& _blObj, TestBlock& _block, Chain
 	//_parentHeader - parent blockheader
 
 	vector<TestBlock> const& importedBlocks = _chainBranch.importedBlocks;
-	const SealEngineFace* sealEngine = _chainBranch.blockchain.interface().sealEngine();
+	const SealEngineFace* sealEngine = _chainBranch.blockchain.getInterface().sealEngine();
 
 	BlockHeader tmp;
 	BlockHeader const& header = _block.blockHeader();
@@ -638,7 +626,7 @@ void overwriteBlockHeaderForTest(mObject const& _blObj, TestBlock& _block, Chain
 		if (ho.count("RelTimestamp"))
 		{
 			BlockHeader parentHeader = importedBlocks.at(importedBlocks.size() - 1).blockHeader();
-			tmp.setTimestamp(toInt(ho["RelTimestamp"]) + parentHeader.timestamp());
+			tmp.setTimestamp(toPositiveInt64(ho["RelTimestamp"]) + parentHeader.timestamp());
 			tmp.setDifficulty(((const Ethash*)sealEngine)->calculateDifficulty(tmp, parentHeader));
 		}
 
@@ -660,7 +648,7 @@ void overwriteBlockHeaderForTest(mObject const& _blObj, TestBlock& _block, Chain
 		}
 		else
 		{
-			cerr << TestOutputHelper::testName() + "Could not populate blockHeader from block: there are no block with number!" << TestOutputHelper::testName() << "\n";
+			cerr << TestOutputHelper::get().testName() + "Could not populate blockHeader from block: there are no block with number!" << TestOutputHelper::get().testName() << "\n";
 		}
 	}
 
@@ -683,7 +671,7 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 	//uncles		 - previously imported uncles
 	//importedBlocks - blocks already included in BlockChain
 	vector<TestBlock> const& importedBlocks = _chainBranch.importedBlocks;
-	const SealEngineFace* sealEngine = _chainBranch.blockchain.interface().sealEngine();
+	const SealEngineFace* sealEngine = _chainBranch.blockchain.getInterface().sealEngine();
 
 	if (uncleHeaderObj.count("sameAsPreviousSibling"))
 	{
@@ -691,7 +679,7 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 		if (uncles.size())
 			uncle = uncles.at(uncles.size() - 1);
 		else
-			cerr << TestOutputHelper::testName() + "Could not create uncle sameAsPreviousSibling: there are no siblings!";
+			cerr << TestOutputHelper::get().testName() + "Could not create uncle sameAsPreviousSibling: there are no siblings!";
 		return;
 	}
 
@@ -703,7 +691,7 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 		if (number < importedBlocks.size())
 			uncle = importedBlocks.at(number);
 		else
-			cerr << TestOutputHelper::testName() + "Could not create uncle sameAsBlock: there are no block with number " << number;
+			cerr << TestOutputHelper::get().testName() + "Could not create uncle sameAsBlock: there are no block with number " << number;
 		return;
 	}
 
@@ -717,10 +705,10 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 			if (prevBlockUncles.size())
 				uncle = prevBlockUncles[0];  //exact uncle??
 			else
-				cerr << TestOutputHelper::testName() + "Could not create uncle sameAsPreviousBlockUncle: previous block has no uncles!" << TestOutputHelper::testName() << "\n";
+				cerr << TestOutputHelper::get().testName() + "Could not create uncle sameAsPreviousBlockUncle: previous block has no uncles!" << TestOutputHelper::get().testName() << "\n";
 		}
 		else
-			cerr << TestOutputHelper::testName() + "Could not create uncle sameAsPreviousBlockUncle: there are no block imported!" << TestOutputHelper::testName() << "\n";
+			cerr << TestOutputHelper::get().testName() + "Could not create uncle sameAsPreviousBlockUncle: there are no block imported!" << TestOutputHelper::get().testName() << "\n";
 		return;
 	}
 
@@ -735,7 +723,7 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 	BlockHeader uncleHeader;
 	if (uncleHeaderObj.count("populateFromBlock"))
 	{
-		uncleHeader.setTimestamp((u256)time(0));
+		uncleHeader.setTimestamp(time(0));
 		size_t number = (size_t)toInt(uncleHeaderObj.at("populateFromBlock"));
 		uncleHeaderObj.erase("populateFromBlock");
 		if (number < importedBlocks.size())
@@ -752,13 +740,14 @@ void overwriteUncleHeaderForTest(mObject& uncleHeaderObj, TestBlock& uncle, std:
 			if (uncleHeaderObj.count("RelTimestamp"))
 			{
 				BlockHeader parentHeader = importedBlocks.at(number).blockHeader();
-				uncleHeader.setTimestamp(toInt(uncleHeaderObj["RelTimestamp"]) + parentHeader.timestamp());
+				uncleHeader.setTimestamp(
+                    toPositiveInt64(uncleHeaderObj["RelTimestamp"]) + parentHeader.timestamp());
 				uncleHeader.setDifficulty(((const Ethash*)sealEngine)->calculateDifficulty(uncleHeader, parentHeader));
 				uncleHeaderObj.erase("RelTimestamp");
 			}
 		}
 		else
-			cerr << TestOutputHelper::testName() + "Could not create uncle populateFromBlock: there are no block with number " << number << TestOutputHelper::testName() << "\n";
+			cerr << TestOutputHelper::get().testName() + "Could not create uncle populateFromBlock: there are no block with number " << number << TestOutputHelper::get().testName() << "\n";
 	}
 	else
 	{
@@ -856,7 +845,7 @@ void checkExpectedException(mObject& _blObj, Exception const& _e)
 	bool isNetException = (_blObj.count("expectException"+test::netIdToString(test::TestBlockChain::s_sealEngineNetwork)) > 0);
 	bool isAllNetException = (_blObj.count("expectExceptionALL") > 0);
 
-	BOOST_REQUIRE_MESSAGE(isNetException || isAllNetException, TestOutputHelper::testName() + " block import thrown unexpected Excpetion! (" + exWhat + ")");
+	BOOST_REQUIRE_MESSAGE(isNetException || isAllNetException, TestOutputHelper::get().testName() + " block import thrown unexpected Excpetion! (" + exWhat + ")");
 
 	string exExpect;
 	if (isNetException)
@@ -864,32 +853,32 @@ void checkExpectedException(mObject& _blObj, Exception const& _e)
 	if (isAllNetException)
 		exExpect = _blObj.at("expectExceptionALL").get_str();
 
-	BOOST_REQUIRE_MESSAGE(exWhat.find(exExpect) != string::npos, TestOutputHelper::testName() + " block import expected another exeption: " + exExpect + ", but got: " + exWhat);
+	BOOST_REQUIRE_MESSAGE(exWhat.find(exExpect) != string::npos, TestOutputHelper::get().testName() + " block import expected another exeption: " + exExpect + ", but got: " + exWhat);
 }
 
 void checkJsonSectionForInvalidBlock(mObject& _blObj)
 {
 	BOOST_CHECK_MESSAGE(_blObj.count("blockHeader") == 0,
 			"blockHeader field is found in the should-be invalid block. "
-			"filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 	);
 	BOOST_CHECK_MESSAGE(_blObj.count("transactions") == 0,
 			"transactions field is found in the should-be invalid block. "
-			"filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 	);
 	BOOST_CHECK_MESSAGE(_blObj.count("uncleHeaders") == 0,
 			"uncleHeaders field is found in the should-be invalid block. "
-			"filename: " + TestOutputHelper::testFileName() +
-			" testname: " + TestOutputHelper::testName()
+			"filename: " + TestOutputHelper::get().testFile().string() +
+			" testname: " + TestOutputHelper::get().testName()
 	);
 }
 
 void eraseJsonSectionForInvalidBlock(mObject& _blObj)
 {
 	// if exception is thrown, RLP is invalid and no blockHeader, Transaction list, or Uncle list should be given
-	cnote << TestOutputHelper::testName() + " block is invalid!\n";
+	cnote << TestOutputHelper::get().testName() + " block is invalid!\n";
 	_blObj.erase(_blObj.find("blockHeader"));
 	_blObj.erase(_blObj.find("uncleHeaders"));
 	_blObj.erase(_blObj.find("transactions"));
@@ -960,12 +949,6 @@ class bcTestFixture {
 		test::BlockchainTestSuite suite;
 		string const& casename = boost::unit_test::framework::current_test_case().p_name;
 
-		if (casename == "bcForgedTest" && test::Options::get().filltests)
-		{
-			suite.copyAllTestsFromFolder(casename);
-			return;
-		}
-
 		//skip wallet test as it takes too much time (250 blocks) run it with --all flag
 		if (casename == "bcWalletTest" && !test::Options::get().all)
 		{
@@ -981,8 +964,8 @@ class bcTransitionFixture {
 	public:
 	bcTransitionFixture()
 	{
-		string const& casename = boost::unit_test::framework::current_test_case().p_name;
 		test::TransitionTestsSuite suite;
+		string const& casename = boost::unit_test::framework::current_test_case().p_name;
 		suite.runAllTestsInFolder(casename);
 	}
 };
@@ -992,17 +975,14 @@ class bcGeneralTestsFixture
 	public:
 	bcGeneralTestsFixture()
 	{
-		//general tests are filled from state tests
-		//skip this test suite if not run with --all flag (cases are already tested in state tests)
-		if (test::Options::get().filltests || !test::Options::get().all)
-			return;
-
+		test::BCGeneralStateTestsSuite suite;
 		string const& casename = boost::unit_test::framework::current_test_case().p_name;
 		//skip this test suite if not run with --all flag (cases are already tested in state tests)
 		if (!test::Options::get().all)
+		{
 			cnote << "Skipping hive test " << casename << ". Use --all to run it.\n";
-
-		test::BCGeneralStateTestsSuite suite;
+			return;
+		}
 		suite.runAllTestsInFolder(casename);
 	}
 };
@@ -1013,7 +993,7 @@ BOOST_AUTO_TEST_CASE(bcStateTests){}
 BOOST_AUTO_TEST_CASE(bcBlockGasLimitTest){}
 BOOST_AUTO_TEST_CASE(bcGasPricerTest){}
 BOOST_AUTO_TEST_CASE(bcInvalidHeaderTest){}
-BOOST_AUTO_TEST_CASE(bcUncleHeaderValiditiy){}
+BOOST_AUTO_TEST_CASE(bcUncleHeaderValidity){}
 BOOST_AUTO_TEST_CASE(bcUncleTest){}
 BOOST_AUTO_TEST_CASE(bcValidBlockTest){}
 BOOST_AUTO_TEST_CASE(bcWalletTest){}
@@ -1047,7 +1027,9 @@ BOOST_AUTO_TEST_CASE(stInitCodeTest){}
 BOOST_AUTO_TEST_CASE(stLogTests){}
 BOOST_AUTO_TEST_CASE(stMemoryTest){}
 BOOST_AUTO_TEST_CASE(stPreCompiledContracts){}
+BOOST_AUTO_TEST_CASE(stPreCompiledContracts2){}
 BOOST_AUTO_TEST_CASE(stRandom){}
+BOOST_AUTO_TEST_CASE(stRandom2){}
 BOOST_AUTO_TEST_CASE(stRecursiveCreate){}
 BOOST_AUTO_TEST_CASE(stRefundTest){}
 BOOST_AUTO_TEST_CASE(stSolidityTest){}
@@ -1083,6 +1065,12 @@ BOOST_AUTO_TEST_CASE(stStackTests){}
 BOOST_AUTO_TEST_CASE(stStaticCall){}
 BOOST_AUTO_TEST_CASE(stReturnDataTest){}
 BOOST_AUTO_TEST_CASE(stZeroKnowledge){}
+BOOST_AUTO_TEST_CASE(stZeroKnowledge2){}
+BOOST_AUTO_TEST_CASE(stBugs){}
+
+//Constantinople Tests
+BOOST_AUTO_TEST_CASE(stShift){}
+
 
 //Stress Tests
 BOOST_AUTO_TEST_CASE(stAttackTest){}
@@ -1092,5 +1080,7 @@ BOOST_AUTO_TEST_CASE(stQuadraticComplexityTest){}
 //Bad opcodes test
 BOOST_AUTO_TEST_CASE(stBadOpcode){}
 
+//New Tests
+BOOST_AUTO_TEST_CASE(stArgsZeroOneBalance){}
 BOOST_AUTO_TEST_SUITE_END()
 

@@ -43,7 +43,7 @@ enum class WhenError
 };
 
 template <class Iterator>
-std::string toHex(Iterator _it, Iterator _end, std::string _prefix)
+std::string toHex(Iterator _it, Iterator _end, std::string const& _prefix)
 {
 	typedef std::iterator_traits<Iterator> traits;
 	static_assert(sizeof(typename traits::value_type) == 1, "toHex needs byte-sized element type");
@@ -208,9 +208,6 @@ unsigned commonPrefix(T const& _t, _U const& _u)
 	return s;
 }
 
-/// Creates a random, printable, word.
-std::string randomWord();
-
 /// Determine bytes required to encode the given integer value. @returns 0 if @a _i is zero.
 template <class T>
 inline unsigned bytesRequired(T _i)
@@ -313,37 +310,6 @@ inline std::vector<T> operator+(std::vector<T> const& _a, std::vector<T> const& 
 	return ret += _b;
 }
 
-/// Merge two sets of elements.
-template <class T>
-inline std::set<T>& operator+=(std::set<T>& _a, std::set<T> const& _b)
-{
-	for (auto& i: _b)
-		_a.insert(i);
-	return _a;
-}
-
-/// Merge two sets of elements.
-template <class T>
-inline std::set<T> operator+(std::set<T> const& _a, std::set<T> const& _b)
-{
-	std::set<T> ret(_a);
-	return ret += _b;
-}
-
-template <class A, class B>
-std::unordered_map<A, B>& operator+=(std::unordered_map<A, B>& _x, std::unordered_map<A, B> const& _y)
-{
-	for (auto const& i: _y)
-		_x.insert(i);
-	return _x;
-}
-
-template <class A, class B>
-std::unordered_map<A, B> operator+(std::unordered_map<A, B> const& _x, std::unordered_map<A, B> const& _y)
-{
-	std::unordered_map<A, B> ret(_x);
-	return ret += _y;
-}
 
 /// Make normal string from fixed-length string.
 std::string toString(string32 const& _s);
@@ -392,4 +358,9 @@ bool contains(T const& _t, V const& _v)
 	return std::end(_t) != std::find(std::begin(_t), std::end(_t), _v);
 }
 
+template <class V>
+bool contains(std::unordered_set<V> const& _set, V const& _v)
+{
+    return _set.find(_v) != _set.end();
+}
 }

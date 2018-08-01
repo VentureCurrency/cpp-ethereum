@@ -43,9 +43,6 @@ struct TransactionSkeleton;
 class Interface;
 }
 
-extern const unsigned SensibleHttpThreads;
-extern const unsigned SensibleHttpPort;
-
 }
 
 namespace dev
@@ -53,6 +50,9 @@ namespace dev
 
 namespace rpc
 {
+
+// Should only be called within a catch block
+std::string exceptionToErrorMessage();
 
 /**
  * @brief JSON-RPC api implementation
@@ -80,7 +80,7 @@ public:
 	virtual std::string eth_getStorageAt(std::string const& _address, std::string const& _position, std::string const& _blockNumber) override;
 	virtual std::string eth_getStorageRoot(std::string const& _address, std::string const& _blockNumber) override;
 	virtual std::string eth_getTransactionCount(std::string const& _address, std::string const& _blockNumber) override;
-	virtual std::string eth_pendingTransactions() override;
+	virtual Json::Value eth_pendingTransactions() override;
 	virtual Json::Value eth_getBlockTransactionCountByHash(std::string const& _blockHash) override;
 	virtual Json::Value eth_getBlockTransactionCountByNumber(std::string const& _blockNumber) override;
 	virtual Json::Value eth_getUncleCountByBlockHash(std::string const& _blockHash) override;
@@ -115,11 +115,12 @@ public:
 	virtual std::string eth_register(std::string const& _address) override;
 	virtual bool eth_unregister(std::string const& _accountId) override;
 	virtual Json::Value eth_fetchQueuedTransactions(std::string const& _accountId) override;
-	virtual std::string eth_signTransaction(Json::Value const& _transaction) override;
+	virtual Json::Value eth_signTransaction(Json::Value const& _transaction) override;
 	virtual Json::Value eth_inspectTransaction(std::string const& _rlp) override;
 	virtual std::string eth_sendRawTransaction(std::string const& _rlp) override;
 	virtual bool eth_notePassword(std::string const&) override { return false; }
 	virtual Json::Value eth_syncing() override;
+	virtual std::string eth_chainId() override;
 	
 	void setTransactionDefaults(eth::TransactionSkeleton& _t);
 protected:

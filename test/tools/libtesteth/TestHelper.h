@@ -22,6 +22,7 @@
 
 #include <thread>
 #include <future>
+#include <set>
 #include <functional>
 #include <boost/test/unit_test.hpp>
 #include <boost/filesystem.hpp>
@@ -36,6 +37,7 @@
 #include <test/tools/libtesteth/Options.h>
 #include <test/tools/libtesteth/ImportTest.h>
 #include <test/tools/libtesteth/TestOutputHelper.h>
+#include <test/tools/libtesteth/TestSuite.h>
 
 namespace dev
 {
@@ -58,6 +60,7 @@ namespace test
 struct ValueTooLarge: virtual Exception {};
 struct MissingFields : virtual Exception {};
 bigint const c_max256plus1 = bigint(1) << 256;
+typedef json_spirit::Value_type jsonVType;
 
 class ZeroGasPricer: public eth::GasPricer
 {
@@ -69,19 +72,34 @@ protected:
 // helping functions
 std::string prepareVersionString();
 std::string prepareLLLCVersionString();
-std::vector<boost::filesystem::path> getJsonFiles(boost::filesystem::path const& _dirPath, std::string const& _particularFile = {});
+std::vector<boost::filesystem::path> getFiles(boost::filesystem::path const& _dirPath, std::set<std::string> _extentionMask, std::string const& _particularFile = {});
 std::string netIdToString(eth::Network _netId);
 eth::Network stringToNetId(std::string const& _netname);
 bool isDisabledNetwork(eth::Network _net);
-std::vector<eth::Network> const& getNetworks();
+std::set<eth::Network> const& getNetworks();
+
+/// translate network names in expect section field
+/// >Homestead to EIP150, EIP158, Byzantium, ...
+/// <=Homestead to Frontier, Homestead
+std::set<std::string> translateNetworks(std::set<std::string> const& _networks);
 u256 toInt(json_spirit::mValue const& _v);
+
+/// Parses a JSON value as an 64-bit signed integer.
+/// Throws std::out_of_range exception in case the value is too big or negative.
+int64_t toPositiveInt64(const json_spirit::mValue& _v);
+
 byte toByte(json_spirit::mValue const& _v);
-void replaceLLLinState(json_spirit::mObject& _o);
+bytes processDataOrCode(json_spirit::mObject const& _o, std::string const& nodeName);
+std::string replaceCode(std::string const& _code);
+void replaceCodeInState(json_spirit::mObject& _o);
 std::string compileLLL(std::string const& _code);
 std::string executeCmd(std::string const& _command);
+json_spirit::mValue parseYamlToJson(std::string const& _string);
 bytes importCode(json_spirit::mObject const& _o);
 bytes importData(json_spirit::mObject const& _o);
 bytes importByteArray(std::string const& _str);
+void requireJsonFields(json_spirit::mObject const& _o, std::string const& _section,
+    std::map<std::string, json_spirit::Value_type> const& _validationMap);
 void checkHexHasEvenLength(std::string const&);
 void copyFile(boost::filesystem::path const& _source, boost::filesystem::path const& _destination);
 eth::LogEntries importLog(json_spirit::mArray const& _o);
@@ -111,10 +129,8 @@ json_spirit::mObject fillJsonWithState(eth::State const& _state, eth::AccountMas
 json_spirit::mObject fillJsonWithTransaction(eth::Transaction const& _txn);
 
 //Fill Test Functions
-int createRandomTest();	//returns 0 if succeed, 1 if there was an error;
+bool createRandomTest();	//returns true if succeed, false if there was an error;
 void doRlpTests(json_spirit::mValue const& _input);
-void addClientInfo(json_spirit::mValue& v, boost::filesystem::path const& _testSource);
-void removeComments(json_spirit::mValue& _obj);
 
 /// Allows observing test execution process.
 /// This class also provides methods for registering and notifying the listener

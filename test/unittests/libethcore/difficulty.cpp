@@ -42,36 +42,38 @@ std::string const c_testDifficulty = R"(
 		"currentDifficulty" : "[CDIFF]"
 	},
 )";
+h256 const nonzeroHash = sha3("whatever nonempty string");
 
 void fillDifficulty(boost::filesystem::path const& _testFileFullName, Ethash& _sealEngine)
 {
 	int testN = 0;
 	ostringstream finalTest;
 	finalTest << "{\n";
-	dev::test::TestOutputHelper testOutputHelper(900);
-	h256 someHash = sha3("whatever nonempty string");
+	test::TestOutputHelper::get().initTest(900);
 
-	for (int stampDelta = 0; stampDelta < 45; stampDelta+=2)
+	for (int stampDelta = 0; stampDelta < 45; stampDelta += 2)
 	{
 		for (int pUncles = 0; pUncles < 2; pUncles++)
 		{
-			for (u256 blockNumber = 100000; blockNumber < 5000000; blockNumber += 100000)
+			for (int blockNumber = 100000; blockNumber < 5000000; blockNumber += 100000)
 			{
 				testN++;
 				string testName = "DifficultyTest"+toString(testN);
-				if (!dev::test::TestOutputHelper::checkTest(testName))
+				if (!test::TestOutputHelper::get().checkTest(testName))
 					continue;
 
-				u256 pStamp = dev::test::RandomCode::randomUniInt();
-				u256 pDiff = dev::test::RandomCode::randomUniInt();
-				u256 cStamp = pStamp + stampDelta;
-				u256 cNum = blockNumber;
+				// A random timestamp up to year 3048.
+				auto pStamp =
+					static_cast<int64_t>(test::RandomCode::get().randomUniInt(1, 34020247236));
+				u256 pDiff = test::RandomCode::get().randomUniInt();
+				int64_t cStamp = pStamp + stampDelta;
+				int cNum = blockNumber;
 
 				BlockHeader parent;
 				parent.setTimestamp(pStamp);
 				parent.setDifficulty(pDiff);
 				parent.setNumber(cNum - 1);
-				parent.setSha3Uncles((pUncles == 0) ? EmptyListSHA3 : someHash);
+				parent.setSha3Uncles((pUncles == 0) ? EmptyListSHA3 : nonzeroHash);
 
 				BlockHeader current;
 				current.setTimestamp(cStamp);
@@ -87,7 +89,8 @@ void fillDifficulty(boost::filesystem::path const& _testFileFullName, Ethash& _s
 				replaceMap["[CNUM]"] = toCompactHexPrefixed(cNum);
 				replaceMap["[CDIFF]"] = toCompactHexPrefixed(_sealEngine.calculateDifficulty(current, parent));
 
-				dev::test::RandomCode::parseTestWithTypes(tmptest, replaceMap);
+				test::RandomCodeOptions defaultOptions;
+				test::RandomCode::get().parseTestWithTypes(tmptest, replaceMap, defaultOptions);
 				finalTest << tmptest;
 			}
 		}
@@ -106,13 +109,13 @@ void testDifficulty(fs::path const& _testFileFullName, Ethash& _sealEngine)
 	string s = contentsString(_testFileFullName);
 	BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of '" << _testFileFullName << "' is empty. Have you cloned the 'tests' repo branch develop?");
 	js::read_string(s, v);
-	dev::test::TestOutputHelper testOutputHelper(v.get_obj().size());
+	test::TestOutputHelper::get().initTest(v.get_obj().size());
 
 	for (auto& i: v.get_obj())
 	{
 		js::mObject o = i.second.get_obj();
 		string testname = i.first;
-		if (!dev::test::TestOutputHelper::checkTest(testname))
+		if (!test::TestOutputHelper::get().checkTest(testname))
 			continue;
 
 		BOOST_REQUIRE_MESSAGE(o.count("parentTimestamp") > 0, testname + " missing parentTimestamp field");
@@ -124,14 +127,14 @@ void testDifficulty(fs::path const& _testFileFullName, Ethash& _sealEngine)
 		BOOST_REQUIRE_MESSAGE(o.count("currentDifficulty") > 0, testname + " missing currentDifficulty field");
 
 		BlockHeader parent;
-		parent.setTimestamp(test::toInt(o["parentTimestamp"]));
+		parent.setTimestamp(test::toPositiveInt64(o["parentTimestamp"]));
 		parent.setDifficulty(test::toInt(o["parentDifficulty"]));
-		parent.setNumber(test::toInt(o["currentBlockNumber"]) - 1);
+		parent.setNumber(test::toPositiveInt64(o["currentBlockNumber"]) - 1);
 		parent.setSha3Uncles(h256(o["parentUncles"].get_str()));
 
 		BlockHeader current;
-		current.setTimestamp(test::toInt(o["currentTimestamp"]));
-		current.setNumber(test::toInt(o["currentBlockNumber"]));
+		current.setTimestamp(test::toPositiveInt64(o["currentTimestamp"]));
+		current.setNumber(test::toPositiveInt64(o["currentBlockNumber"]));
 
 		u256 difficulty = _sealEngine.calculateDifficulty(current, parent);
 		BOOST_CHECK_EQUAL(difficulty, test::toInt(o["currentDifficulty"]));
@@ -197,7 +200,7 @@ BOOST_AUTO_TEST_CASE(difficultyTestsMainNetwork)
 	fs::path const testFileFullName = test::getTestPath() / fs::path("BasicTests/difficultyMainNetwork.json");
 
 	Ethash sealEngine;
-	sealEngine.setChainParams(ChainParams(genesisInfo(eth::Network::MainNetwork)));
+	sealEngine.setChainParams(ChainParams(genesisInfo(eth::Network::MainNetworkTest)));
 
 	if (dev::test::Options::get().filltests)
 		fillDifficulty(testFileFullName, sealEngine);
@@ -210,12 +213,12 @@ BOOST_AUTO_TEST_CASE(difficultyTestsCustomMainNetwork)
 	fs::path const testFileFullName = test::getTestPath() / fs::path("BasicTests/difficultyCustomMainNetwork.json");
 
 	Ethash sealEngine;
-	sealEngine.setChainParams(ChainParams(genesisInfo(eth::Network::MainNetwork)));
+	sealEngine.setChainParams(ChainParams(genesisInfo(eth::Network::MainNetworkTest)));
 
 	if (dev::test::Options::get().filltests)
 	{
-		u256 homesteadBlockNumber = 3500000;
-		std::vector<u256> blockNumberVector = {homesteadBlockNumber - 100000, homesteadBlockNumber, homesteadBlockNumber + 100000};
+		int64_t byzantiumBlockNumber = 4370000;
+		std::vector<int64_t> blockNumberVector = {byzantiumBlockNumber - 100000, byzantiumBlockNumber, byzantiumBlockNumber + 100000};
 		std::vector<u256> parentDifficultyVector = {1000, 2048, 4000, 1000000};
 		std::vector<int> timestampDeltaVector = {0, 1, 8, 10, 13, 20, 100, 800, 1000, 1500};
 
@@ -230,18 +233,19 @@ BOOST_AUTO_TEST_CASE(difficultyTestsCustomMainNetwork)
 					{
 						testN++;
 						int stampDelta = timestampDeltaVector.at(tsN);
-						u256 blockNumber = blockNumberVector.at(bN);
+						int64_t blockNumber = blockNumberVector.at(bN);
 						u256 pDiff = parentDifficultyVector.at(pdN);
 
-						u256 pStamp = dev::test::RandomCode::randomUniInt();
-						u256 cStamp = pStamp + stampDelta;
-						u256 cNum = blockNumber;
+						auto cStamp = static_cast<int64_t>(test::RandomCode::get().randomUniInt(timestampDeltaVector.back()));
+						int64_t pStamp = cStamp - stampDelta;
+                        int64_t cNum = blockNumber;
 
 						BlockHeader parent;
 						parent.setTimestamp(pStamp);
 						parent.setDifficulty(pDiff);
 						parent.setNumber(cNum - 1);
-						parent.setSha3Uncles(sha3(toString(pUncles)));
+
+						parent.setSha3Uncles((pUncles == 0) ? EmptyListSHA3 : nonzeroHash);
 
 						BlockHeader current;
 						current.setTimestamp(cStamp);
@@ -252,12 +256,13 @@ BOOST_AUTO_TEST_CASE(difficultyTestsCustomMainNetwork)
 						replaceMap["[N]"] = toString(testN);
 						replaceMap["[PDIFF]"] = toCompactHexPrefixed(pDiff);
 						replaceMap["[PSTAMP]"] = toCompactHexPrefixed(pStamp);
-						replaceMap["[PUNCLS]"] = toCompactHexPrefixed(pUncles, 1);
+						replaceMap["[PUNCLS]"] = toCompactHexPrefixed(parent.sha3Uncles());
 						replaceMap["[СSTAMP]"] = toCompactHexPrefixed(cStamp);
 						replaceMap["[CNUM]"] = toCompactHexPrefixed(cNum);
 						replaceMap["[CDIFF]"] = toCompactHexPrefixed(sealEngine.calculateDifficulty(current, parent));
 
-						dev::test::RandomCode::parseTestWithTypes(tmptest, replaceMap);
+						test::RandomCodeOptions defaultOptions;
+						test::RandomCode::get().parseTestWithTypes(tmptest, replaceMap, defaultOptions);
 						finalTest << tmptest;
 					}
 

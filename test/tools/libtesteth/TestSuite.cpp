@@ -27,16 +27,14 @@ using namespace std;
 using namespace dev;
 namespace fs = boost::filesystem;
 
-namespace dev
-{
-namespace test
-{
+//Helper functions for test proccessing
+namespace {
 
 void removeComments(json_spirit::mValue& _obj)
 {
 	if (_obj.type() == json_spirit::obj_type)
 	{
-		std::list<string> removeList;
+		list<string> removeList;
 		for (auto& i: _obj.get_obj())
 		{
 			if (i.first.substr(0, 2) == "//")
@@ -57,7 +55,7 @@ void removeComments(json_spirit::mValue& _obj)
 	}
 }
 
-void addClientInfo(json_spirit::mValue& _v, fs::path const& _testSource)
+void addClientInfo(json_spirit::mValue& _v, fs::path const& _testSource, h256 const& _testSourceHash)
 {
 	for (auto& i: _v.get_obj())
 	{
@@ -72,110 +70,183 @@ void addClientInfo(json_spirit::mValue& _v, fs::path const& _testSource)
 				comment = existingInfo["comment"].get_str();
 		}
 
-		clientinfo["filledwith"] = prepareVersionString();
-		clientinfo["lllcversion"] = prepareLLLCVersionString();
+		clientinfo["filledwith"] = test::prepareVersionString();
+		clientinfo["lllcversion"] = test::prepareLLLCVersionString();
 		clientinfo["source"] = _testSource.string();
+		clientinfo["sourceHash"] = toString(_testSourceHash);
 		clientinfo["comment"] = comment;
 		o["_info"] = clientinfo;
 	}
 }
 
-void TestSuite::runAllTestsInFolder(string const& _testFolder) const
+void checkFillerHash(fs::path const& _compiledTest, fs::path const& _sourceTest)
 {
-	string const filter = test::Options::get().singleTestName.empty() ? string() : test::Options::get().singleTestName + "Filler";
-	std::vector<boost::filesystem::path> const files = test::getJsonFiles(getFullPathFiller(_testFolder).string(), filter);
-	size_t fileCount = files.size();
-	if (test::Options::get().filltests)
-		fileCount *= 2; //tests are checked when filled and after they been filled
+	json_spirit::mValue v;
+	string const s = asString(dev::contents(_compiledTest));
+	BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of " + _compiledTest.string() + " is empty.");
+	json_spirit::read_string(s, v);
+	h256 const fillerHash = sha3(dev::contents(_sourceTest));
 
-	fs::path const destTestFolder = fs::path(suiteFolder()) / _testFolder;
-	fs::path const srcTestFolder = fs::path(suiteFillerFolder()) / _testFolder;
-
-	auto suiteTestDo = [this](json_spirit::mValue const& _input, bool _fillin)
+	for (auto& i: v.get_obj())
 	{
-		return doTests(_input, _fillin);
-	};
-
-	auto testOutput = dev::test::TestOutputHelper(fileCount);
-	for (auto const& file: files)
-	{
-		testOutput.showProgress();
-		test::TestOutputHelper::setCurrentTestFileName(file.filename().string());
-		executeTests(file.filename().string(), destTestFolder.string(), srcTestFolder.string(), suiteTestDo);
+		BOOST_REQUIRE_MESSAGE(i.second.type() == json_spirit::obj_type, i.first + " should contain an object under a test name.");
+		json_spirit::mObject const& obj = i.second.get_obj();
+		BOOST_REQUIRE_MESSAGE(obj.count("_info") > 0, "_info section not set! " + _compiledTest.string());
+		json_spirit::mObject const& info = obj.at("_info").get_obj();
+		BOOST_REQUIRE_MESSAGE(info.count("sourceHash") > 0, "sourceHash not found in " + _compiledTest.string() + " in " + i.first);
+		h256 const sourceHash = h256(info.at("sourceHash").get_str());
+		BOOST_CHECK_MESSAGE(sourceHash == fillerHash, "Test " + _compiledTest.string() + " in " + i.first + " is outdated. Filler hash is different!");
 	}
 }
 
-void TestSuite::copyAllTestsFromFolder(string const& _testFolder) const
+}
+
+namespace dev
 {
-	std::vector<fs::path> const files = test::getJsonFiles(getFullPathFiller(_testFolder).string());
+namespace test
+{
+
+string const c_fillerPostf = "Filler";
+string const c_copierPostf = "Copier";
+
+void TestSuite::runTestWithoutFiller(boost::filesystem::path const& _file) const
+{
+	// Allow to execute a custom test .json file on any test suite
+	auto& testOutput = test::TestOutputHelper::get();
+	testOutput.initTest(1);
+	executeFile(_file);
+	testOutput.finishTest();
+}
+
+void TestSuite::runAllTestsInFolder(string const& _testFolder) const
+{
+	// check that destination folder test files has according Filler file in src folder
+	string const filter = test::Options::get().singleTestName.empty() ? string() : test::Options::get().singleTestName;
+	vector<fs::path> const compiledFiles = test::getFiles(getFullPath(_testFolder), {".json", ".yml"} ,filter);
+	for (auto const& file: compiledFiles)
+	{
+		fs::path const expectedFillerName = getFullPathFiller(_testFolder) / fs::path(file.stem().string() + c_fillerPostf + ".json");
+		fs::path const expectedFillerName2 = getFullPathFiller(_testFolder) / fs::path(file.stem().string() + c_fillerPostf + ".yml");
+		fs::path const expectedCopierName = getFullPathFiller(_testFolder) / fs::path(file.stem().string() + c_copierPostf + ".json");
+		BOOST_REQUIRE_MESSAGE(fs::exists(expectedFillerName) || fs::exists(expectedFillerName2) || fs::exists(expectedCopierName), "Compiled test folder contains test without Filler: " + file.filename().string());
+		BOOST_REQUIRE_MESSAGE(!(fs::exists(expectedFillerName) && fs::exists(expectedFillerName2) && fs::exists(expectedCopierName)), "Src test could either be Filler.json, Filler.yml or Copier.json: " + file.filename().string());
+
+		// Check that filled tests created from actual fillers
+		if (Options::get().filltests == false)
+		{
+			if (fs::exists(expectedFillerName))
+				checkFillerHash(file, expectedFillerName);
+			if (fs::exists(expectedFillerName2))
+				checkFillerHash(file, expectedFillerName2);
+			if (fs::exists(expectedCopierName))
+				checkFillerHash(file, expectedCopierName);
+		}
+	}
+
+	// run all tests
+	vector<fs::path> const files = test::getFiles(getFullPathFiller(_testFolder), {".json", ".yml"}, filter.empty() ? filter : filter + "Filler");
+
+	auto& testOutput = test::TestOutputHelper::get();
+	testOutput.initTest(files.size());
 	for (auto const& file: files)
 	{
-		fs::path const destFile = getFullPath(_testFolder) / file.filename().string();
-		fs::path const srcFile = getFullPathFiller(_testFolder) / file.filename().string();
-		clog << "Copying " << srcFile.string() << "\n";
-		clog << " TO " << destFile.string() << "\n";
-		assert(srcFile.string() != destFile.string());
-		auto testOutput = dev::test::TestOutputHelper();
 		testOutput.showProgress();
-		dev::test::copyFile(srcFile.string(), destFile.string());
-		BOOST_REQUIRE_MESSAGE(boost::filesystem::exists(destFile.string()), "Error when copying the test file!");
+		testOutput.setCurrentTestFile(file);
+		executeTest(_testFolder, file);
 	}
-	runAllTestsInFolder(_testFolder); //check that copied tests are valid
+	testOutput.finishTest();
 }
 
 fs::path TestSuite::getFullPathFiller(string const& _testFolder) const
 {
-	return fs::path(test::getTestPath()) / "src" / suiteFillerFolder() / _testFolder;
+	return test::getTestPath() / "src" / suiteFillerFolder() / _testFolder;
 }
 
 fs::path TestSuite::getFullPath(string const& _testFolder) const
 {
-	return fs::path(test::getTestPath()) / suiteFolder() / _testFolder;
+	return test::getTestPath() / suiteFolder() / _testFolder;
 }
 
-void TestSuite::executeTests(const string& _name, fs::path const& _testPathAppendix, fs::path const& _fillerPathAppendix, std::function<json_spirit::mValue(json_spirit::mValue const&, bool)> doTests) const
+void TestSuite::executeTest(string const& _testFolder, fs::path const& _testFileName) const
 {
-	fs::path const testPath = getTestPath() / _testPathAppendix;
+	fs::path const boostRelativeTestPath = fs::relative(_testFileName, getTestPath());
+	string testname = _testFileName.stem().string();
+	bool isCopySource = false;
+	if (testname.rfind(c_fillerPostf) != string::npos)
+		testname = testname.substr(0, testname.rfind("Filler"));
+	else if (testname.rfind(c_copierPostf) != string::npos)
+	{
+		testname = testname.substr(0, testname.rfind(c_copierPostf));
+		isCopySource = true;
+	}
+	else
+		BOOST_REQUIRE_MESSAGE(false, "Incorrect file suffix in the filler folder! " + _testFileName.string());
 
+	// Filename of the test that would be generated
+	fs::path const boostTestPath = getFullPath(_testFolder) / fs::path(testname + ".json");
+
+	// TODO: An old unmaintained way to gather execution stats needs review.
 	if (Options::get().stats)
 		Listener::registerListener(Stats::get());
 
-	//Get the test name
-	string name = _name;
-	if (_name.rfind("Filler.json") != std::string::npos)
-		name = _name.substr(0, _name.rfind("Filler.json"));
-	else if (_name.rfind(".json") != std::string::npos)
-		name = _name.substr(0, _name.rfind(".json"));
-
 	if (Options::get().filltests)
 	{
-		if (!Options::get().singleTest)
-			cnote << "Populating tests...";
-		json_spirit::mValue v;
-		boost::filesystem::path p(__FILE__);
+		if (isCopySource)
+		{
+			clog << "Copying " << _testFileName.string() << "\n";
+			clog << " TO " << boostTestPath.string() << "\n";
+			assert(_testFileName.string() != boostTestPath.string());
+			TestOutputHelper::get().showProgress();
+			dev::test::copyFile(_testFileName, boostTestPath);
+			BOOST_REQUIRE_MESSAGE(boost::filesystem::exists(boostTestPath.string()), "Error when copying the test file!");
 
-		string const nameEnding = "Filler.json";
-		fs::path const testfileUnderTestPath = fs::path ("src") / _fillerPathAppendix / fs::path(name + nameEnding);
-		fs::path const testfilename = getTestPath() / testfileUnderTestPath;
-		string s = asString(dev::contents(testfilename));
-		BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of " + testfilename.string() + " is empty.");
+			// Update _info and build information of the copied test
+			json_spirit::mValue v;
+			string const s = asString(dev::contents(boostTestPath));
+			json_spirit::read_string(s, v);
+			addClientInfo(v, boostRelativeTestPath, sha3(dev::contents(_testFileName)));
+			writeFile(boostTestPath, asBytes(json_spirit::write_string(v, true)));
+		}
+		else
+		{
+			if (!Options::get().singleTest)
+				cnote << "Populating tests...";
 
-		json_spirit::read_string(s, v);
-		removeComments(v);
-		json_spirit::mValue output = doTests(v, true);
-		addClientInfo(output, testfileUnderTestPath);
-		writeFile(testPath / fs::path(name + ".json"), asBytes(json_spirit::write_string(output, true)));
+			json_spirit::mValue v;
+			bytes const byteContents = dev::contents(_testFileName);
+			string const s = asString(byteContents);
+			BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of " + _testFileName.string() + " is empty.");
+
+			if (_testFileName.extension() == ".json")
+				json_spirit::read_string(s, v);
+			else if (_testFileName.extension() == ".yml")
+				v = test::parseYamlToJson(s);
+			else
+				BOOST_ERROR("Unknow test format!" + TestOutputHelper::get().testFile().string());
+
+			removeComments(v);
+			json_spirit::mValue output = doTests(v, true);
+			addClientInfo(output, boostRelativeTestPath, sha3(byteContents));
+			writeFile(boostTestPath, asBytes(json_spirit::write_string(output, true)));
+		}
 	}
 
-	if ((Options::get().singleTest && Options::get().singleTestName == name) || !Options::get().singleTest)
-		cnote << "TEST " << name << ":";
+	// Test is generated. Now run it and check that there should be no errors
+    if (Options::get().verbosity > 1)
+        std::cout << "TEST " << testname << ":\n";
 
+    Listener::notifySuiteStarted(testname);  // Outdated logging
+    executeFile(boostTestPath);
+}
+
+void TestSuite::executeFile(boost::filesystem::path const& _file) const
+{
 	json_spirit::mValue v;
-	string s = asString(dev::contents(testPath / fs::path(name + ".json")));
-	BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of " << (testPath / fs::path(name + ".json")).string() << " is empty. Have you cloned the 'tests' repo branch develop and set ETHEREUM_TEST_PATH to its path?");
+	string const s = asString(dev::contents(_file));
+	BOOST_REQUIRE_MESSAGE(s.length() > 0, "Contents of " << _file.string() << " is empty. Have you cloned the 'tests' repo branch develop and set ETHEREUM_TEST_PATH to its path?");
 	json_spirit::read_string(s, v);
-	Listener::notifySuiteStarted(name);
 	doTests(v, false);
 }
+
 }
 }

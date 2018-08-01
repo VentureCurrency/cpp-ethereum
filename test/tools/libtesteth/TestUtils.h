@@ -25,6 +25,7 @@
 #include <libdevcore/TransientDirectory.h>
 #include <libethereum/BlockChain.h>
 #include <libethereum/ClientBase.h>
+#include <test/tools/libtesteth/TestOutputHelper.h>
 
 namespace dev
 {
@@ -33,9 +34,9 @@ namespace test
 
 // should be used for multithread tests
 static SharedMutex x_boostTest;
-#define ETH_CHECK_EQUAL(x, y) { dev::WriteGuard(x_boostTest); BOOST_CHECK_EQUAL(x, y); }
-#define ETH_CHECK_EQUAL_COLLECTIONS(xb, xe, yb, ye) { dev::WriteGuard(x_boostTest); BOOST_CHECK_EQUAL_COLLECTIONS(xb, xe, yb, ye); }
-#define ETH_REQUIRE(x) { dev::WriteGuard(x_boostTest); BOOST_REQUIRE(x); }
+#define ETH_CHECK_EQUAL(x, y) { dev::WriteGuard wg(x_boostTest); BOOST_CHECK_EQUAL(x, y); }
+#define ETH_CHECK_EQUAL_COLLECTIONS(xb, xe, yb, ye) { dev::WriteGuard wg(x_boostTest); BOOST_CHECK_EQUAL_COLLECTIONS(xb, xe, yb, ye); }
+#define ETH_REQUIRE(x) { dev::WriteGuard wg(x_boostTest); BOOST_REQUIRE(x); }
 
 struct LoadTestFileFixture
 {
@@ -67,7 +68,7 @@ struct ClientBaseFixture: public BlockChainFixture
 // http://lists.boost.org/boost-users/2010/03/57691.php
 // worth reading
 // https://codecrafter.wordpress.com/2012/11/01/c-unit-test-framework-adapter-part-3/
-struct ParallelClientBaseFixture: public ClientBaseFixture, public ParallelFixture
+struct ParallelClientBaseFixture: public ClientBaseFixture, public ParallelFixture, public TestOutputHelperFixture
 {
 	void enumerateClients(std::function<void(Json::Value const&, dev::eth::ClientBase&)> callback) const;
 };

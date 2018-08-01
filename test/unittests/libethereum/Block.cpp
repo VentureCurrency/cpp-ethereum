@@ -31,22 +31,7 @@ using namespace dev;
 using namespace dev::eth;
 using namespace dev::test;
 
-BOOST_FIXTURE_TEST_SUITE(BlockSuite, TestOutputHelper)
-
-#if !defined(_WIN32)
-BOOST_AUTO_TEST_CASE(bStructures)
-{
-	BlockChat chat;
-	BlockTrace trace;
-	BlockDetail details;
-	BlockSafeExceptions exeptions;
-
-	BOOST_REQUIRE(string(chat.name()).find("◌") != string::npos);
-	BOOST_REQUIRE(string(trace.name()).find("◎") != string::npos);
-	BOOST_REQUIRE(string(details.name()).find("◌") != string::npos);
-	BOOST_REQUIRE(string(exeptions.name()).find("ℹ") != string::npos);
-}
-#endif
+BOOST_FIXTURE_TEST_SUITE(BlockSuite, TestOutputHelperFixture)
 
 BOOST_FIXTURE_TEST_SUITE(FrontierBlockSuite, FrontierNoProofTestFixture)
 
@@ -55,7 +40,7 @@ BOOST_AUTO_TEST_CASE(bStates)
 	TestBlockChain testBlockchain(TestBlockChain::defaultGenesisBlock());
 	TestBlock const& genesisBlock = testBlockchain.testGenesis();
 	OverlayDB const& genesisDB = genesisBlock.state().db();
-	BlockChain const& blockchain = testBlockchain.interface();
+	BlockChain const& blockchain = testBlockchain.getInterface();
 
 	h256 stateRootBefore = testBlockchain.topBlock().state().rootHash();
 	BOOST_REQUIRE(stateRootBefore != h256());
@@ -111,7 +96,7 @@ BOOST_AUTO_TEST_CASE(bCopyOperator)
 	TestBlock const& genesisBlock = testBlockchain.testGenesis();
 
 	OverlayDB const& genesisDB = genesisBlock.state().db();
-	BlockChain const& blockchain = testBlockchain.interface();
+	BlockChain const& blockchain = testBlockchain.getInterface();
 	Block block = blockchain.genesisBlock(genesisDB);
 	block.setAuthor(genesisBlock.beneficiary());
 
@@ -149,7 +134,7 @@ BOOST_AUTO_TEST_CASE(bGasPricer)
 	TestBlockChain testBlockchain(TestBlockChain::defaultGenesisBlock(63000));
 	TestBlock const& genesisBlock = testBlockchain.testGenesis();
 	OverlayDB const& genesisDB = genesisBlock.state().db();
-	BlockChain const& blockchain = testBlockchain.interface();
+	BlockChain const& blockchain = testBlockchain.getInterface();
 
 	TestBlock testBlock;
 	TestTransaction transaction1 = TestTransaction::defaultTransaction(1, 1, 21000);
@@ -234,12 +219,12 @@ BOOST_AUTO_TEST_CASE(bGetReceiptOverflow)
 	TestBlockChain bc;
 	TestBlock const& genesisBlock = bc.testGenesis();
 	OverlayDB const& genesisDB = genesisBlock.state().db();
-	BlockChain const& blockchain = bc.interface();
+	BlockChain const& blockchain = bc.getInterface();
 	Block block = blockchain.genesisBlock(genesisDB);
 	BOOST_CHECK_THROW(block.receipt(123), std::out_of_range);
 }
 
-class ConstantinopleTransitionTestFixture: public TestOutputHelper
+class ConstantinopleTransitionTestFixture: public TestOutputHelperFixture
 {
 public:
 	ConstantinopleTransitionTestFixture():
@@ -247,7 +232,7 @@ public:
 		testBlockchain(TestBlockChain::defaultGenesisBlock()),
 		genesisBlock(testBlockchain.testGenesis()),
 		genesisDB(genesisBlock.state().db()),
-		blockchain(testBlockchain.interface())
+		blockchain(testBlockchain.getInterface())
 	{
 		TestBlock testBlock;
 		// block 1 - before Constantinople
